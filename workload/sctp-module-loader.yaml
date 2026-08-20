@@ -1,0 +1,72 @@
+# Loads the SCTP kernel module on every workload-cluster node.
+#
+# WHY: Sylva's hardened node image (ubuntu-noble-hardened-rke2) ships the CIS
+# benchmark's /etc/modprobe.d/sctp.conf containing `install sctp /bin/false`, which
+# makes a plain `modprobe sctp` fail. Open5GS AMF listens on N2/NGAP over SCTP
+# (IP protocol 132) and aborts at startup with:
+#     [sock] ERROR: socket create(2:1:132) failed (93:Protocol not supported)
+#     [app]  FATAL: Open5GS initialization failed. Aborted
+#
+# This is a NODE capability, so it cannot be fixed in the chart or the HelmRelease.
+# A DaemonSet is the right shape twice over: it is the conventional kernel-module
+# loader pattern, and it schedules via nodeAffinity rather than spec.nodeName —
+# which matters because Sylva's `restrict-node-selection` ValidatingAdmissionPolicy
+# rejects spec.nodeName in any namespace lacking the sylva.org/sylva-managed label.
+# (That is also why `kubectl debug node/...` is denied here. Do not label `sandbox`
+# as sylva-managed to work around it — that disables the guard for everything else
+# in the namespace.)
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: sctp-module-loader
+  labels:
+    app: sctp-module-loader
+spec:
+  selector:
+    matchLabels:
+      app: sctp-module-loader
+  template:
+    metadata:
+      labels:
+        app: sctp-module-loader
+    spec:
+      tolerations:
+        - operator: Exists          # single-node cluster: must run on the control plane
+      volumes:
+        - name: host
+          hostPath:
+            path: /
+      containers:
+        - name: modprobe
+          image: busybox:1.36
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: host
+              mountPath: /host
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -u
+              echo "--- CIS blacklist found ---"
+              grep -rns sctp /host/etc/modprobe.d/ /host/usr/lib/modprobe.d/ || true
+
+              echo "--- neutralising it for boot-time load ---"
+              if [ -f /host/etc/modprobe.d/sctp.conf ]; then
+                mv /host/etc/modprobe.d/sctp.conf /host/etc/modprobe.d/sctp.conf.cis-disabled
+              fi
+              # `blacklist sctp` only suppresses autoload-by-alias; the real block is
+              # `install sctp /bin/false`, which replaces loading with a failing command.
+              echo 'install sctp /sbin/modprobe --ignore-install sctp' > /host/etc/modprobe.d/00-enable-sctp.conf
+              echo sctp > /host/etc/modules-load.d/sctp.conf
+
+              echo "--- loading now, bypassing any install rule ---"
+              chroot /host modprobe --ignore-install sctp || true
+
+              if chroot /host lsmod | grep -w sctp; then
+                echo "RESULT: sctp protocol module LOADED"
+              else
+                echo "RESULT: sctp STILL NOT LOADED"
+                exit 1        # fail the pod so the Kustomization does not report Ready
+              fi
+              sleep infinity

@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Applied to the MANAGEMENT cluster, into the workload cluster's namespace.
+# The namespace is set by the Sylva Kustomization (targetNamespace), not here.
+
+configurations:
+- configuration.yaml
+
+resources:
+- helmrepository.yaml
+- open5gs-hr.yaml
+- ueransim-hr.yaml
+
+configMapGenerator:
+- name: open5gs-values
+  files:
+  - values.yaml=values/open5gs-values.yaml
+- name: ueransim-values
+  files:
+  - values.yaml=values/ueransim-values.yaml

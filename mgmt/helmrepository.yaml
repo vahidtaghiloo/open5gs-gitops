@@ -1,0 +1,11 @@
+# The gradiant charts are published as OCI artifacts on Docker Hub.
+# This object lives on the MANAGEMENT cluster; source-controller pulls the chart
+# there, and helm-controller then installs it into the workload cluster.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: gradiant
+spec:
+  type: oci
+  url: oci://registry-1.docker.io/gradiant
+  interval: 10m

@@ -1,0 +1,13 @@
+# Kustomize does not know that HelmRelease.spec.valuesFrom[].name refers to a
+# ConfigMap, so it will not rewrite that field to the hash-suffixed name emitted by
+# configMapGenerator. Without this, a values edit changes the ConfigMap name while
+# the HelmRelease keeps pointing at the old one — a silent no-op.
+#
+# Same mechanism Sylva applies to its own SylvaUnitsRelease, see
+# sylva-core/environment-values/base/configuration.yaml
+nameReference:
+- kind: ConfigMap
+  version: v1
+  fieldSpecs:
+  - path: spec/valuesFrom/name
+    kind: HelmRelease

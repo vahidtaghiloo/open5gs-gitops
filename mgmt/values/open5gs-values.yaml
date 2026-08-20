@@ -1,0 +1,80 @@
+# Open5GS 5G SA core — values for chart gradiant/open5gs
+#
+# Base: https://gradiant.github.io/5g-charts/docs/open5gs-ueransim-gnb/5gSA-values.yaml
+# (fetched 2026-08-20). Everything below the "Sylva demo overrides" marker was added
+# after the 2026-08-18 demo run; see flux-demo-open5gs.md steps 5b.5 / 5b.6.
+
+hss:
+  enabled: false
+
+mme:
+  enabled: false
+
+pcrf:
+  enabled: false
+
+smf:
+  config:
+    pcrf:
+      enabled: false
+
+sgwc:
+  enabled: false
+
+sgwu:
+  enabled: false
+
+amf:
+  config:
+    guamiList:
+      - plmn_id:
+          mcc: "999"
+          mnc: "70"
+        amf_id:
+          region: 2
+          set: 1
+    taiList:
+      - plmn_id:
+          mcc: "999"
+          mnc: "70"
+        tac: [1]
+    plmnList:
+      - plmn_id:
+          mcc: "999"
+          mnc: "70"
+        s_nssai:
+          - sst: 1
+            sd: "0x111111"
+
+nssf:
+  config:
+    nsiList:
+      - uri: ""
+        sst: 1
+        sd: "0x111111"
+
+webui:
+  ingress:
+    enabled: false
+
+populate:
+  enabled: true
+  initCommands:
+  - open5gs-dbctl add_ue_with_slice 999700000000001 465B5CE8B199B49FAA5F0A2EE238A6BC E8ED289DEBA952E4283B54E88E6183CA internet 1 111111
+  - open5gs-dbctl add_ue_with_slice 999700000000002 465B5CE8B199B49FAA5F0A2EE238A6BC E8ED289DEBA952E4283B54E88E6183CA internet 1 111111
+
+# ----------------------------------------------------------------------------
+# Sylva demo overrides
+# ----------------------------------------------------------------------------
+
+# Bitnami retired the public `bitnami/mongodb` tags; the chart's pinned tag 404s
+# on pull and takes udr/pcf/populate down with it. bitnamilegacy still serves it.
+mongodb:
+  image:
+    registry: docker.io
+    repository: bitnamilegacy/mongodb
+    tag: 5.0.10-debian-11-r3
+
+# Not needed for this demo, and its init container pulls another dead bitnami tag.
+webui:
+  enabled: false

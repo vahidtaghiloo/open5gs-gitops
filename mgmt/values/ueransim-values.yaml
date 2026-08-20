@@ -1,0 +1,20 @@
+# UERANSIM gNB + 2 simulated UEs — values for chart gradiant/ueransim-gnb
+#
+# Base: https://gradiant.github.io/5g-charts/docs/open5gs-ueransim-gnb/gnb-ues-values.yaml
+# (fetched 2026-08-20). Unmodified: `amf.hostname: open5gs-amf-ngap` already matches
+# the Service name rendered by the open5gs chart at releaseName `open5gs`, and the
+# PLMN/slice values match 5gSA-values.yaml above.
+
+amf:
+  hostname: open5gs-amf-ngap
+
+mcc: '999'
+mnc: '70'
+sst: 1
+sd: "0x111111"
+tac: '0001'
+
+ues:
+  enabled: true
+  count: 2
+  initialMSISDN: '0000000001'

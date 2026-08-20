@@ -1,0 +1,42 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: ueransim-gnb
+spec:
+  interval: 5m
+  releaseName: ueransim-gnb
+
+  # The gNB's SCTP association to open5gs-amf-ngap fails if the core is not up yet,
+  # so gate on it. dependsOn between HelmReleases resolves inside this namespace on
+  # the management cluster — both objects live there, even though both deploy remotely.
+  dependsOn:
+  - name: open5gs
+
+  targetNamespace: sandbox
+  storageNamespace: sandbox
+  kubeConfig:
+    secretRef:
+      name: ${WC_KUBECONFIG_SECRET}
+
+  chart:
+    spec:
+      chart: ueransim-gnb
+      version: "0.2.6"
+      sourceRef:
+        kind: HelmRepository
+        name: gradiant
+
+  timeout: 30m
+  install:
+    timeout: 30m
+    remediation:
+      retries: 3
+  upgrade:
+    timeout: 30m
+    remediation:
+      retries: 3
+
+  valuesFrom:
+  - kind: ConfigMap
+    name: ueransim-values
+    valuesKey: values.yaml

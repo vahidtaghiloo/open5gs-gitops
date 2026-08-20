@@ -1,0 +1,74 @@
+# ---------------------------------------------------------------------------
+# Paste into: sylva-core/environment-values/workload-clusters/my-workload/values.yaml
+#
+# Then:  cd ~/sylva-core
+#        export KUBECONFIG=$PWD/management-cluster-kubeconfig
+#        ./apply-workload-cluster.sh environment-values/workload-clusters/my-workload
+#
+# This is the ONLY imperative step, and only when these definitions change.
+# Everything inside the git repo below is reconciled by pull, forever after.
+# ---------------------------------------------------------------------------
+
+source_templates:
+  telco-demo:
+    kind: GitRepository
+    spec:
+      url: https://github.com/vahidtaghiloo/open5gs-gitops
+      ref:
+        branch: main
+      # Sylva's git_repo_spec_default is 168h — right for its own tag-pinned sources,
+      # useless for a repo you are actively editing. This is the poll rate.
+      interval: 1m
+    # For a private repo, add credentials here; Sylva generates the secretRef.
+    # auth:
+    #   username: <user>
+    #   password: <token>
+
+units:
+
+  # -- 1. node prerequisites, applied INTO the workload cluster -----------------
+  # Inherits kubeConfig.secretRef from unit_kustomization_spec_default, so the
+  # DaemonSet lands in the workload cluster itself.
+  telco-demo-node-prereqs:
+    info:
+      description: loads the SCTP kernel module required by Open5GS AMF (N2/NGAP)
+    enabled: true
+    unit_templates:
+    - base-deps
+    repo: telco-demo
+    depends_on:
+      sandbox-privileged-namespace: true
+    kustomization_spec:
+      path: ./workload
+      targetNamespace: sandbox
+      prune: true
+      wait: true
+      timeout: 10m
+
+  # -- 2. the 5G core + RAN, HelmReleases applied to the MANAGEMENT cluster -----
+  # 'kustomization-deployed-on-mgmt-cluster' cancels the inherited kubeConfig, so the
+  # HelmRelease objects land on mgmt where helm-controller can act on them; each one
+  # then carries its own kubeConfig to install into the workload cluster.
+  # Without this template the HelmReleases would be applied into the workload cluster,
+  # where no helm-controller exists, and nothing would ever happen.
+  telco-demo:
+    info:
+      description: Open5GS 5G SA core + UERANSIM gNB/UEs in the sandbox namespace
+    enabled: true
+    unit_templates:
+    - base-deps
+    - kustomization-deployed-on-mgmt-cluster
+    repo: telco-demo
+    depends_on:
+      # the SCTP module must be loaded before AMF starts, or it aborts at boot.
+      # In the demo this was discovered by failure; here it is a declared DAG edge.
+      telco-demo-node-prereqs: true
+    kustomization_spec:
+      path: ./mgmt
+      targetNamespace: '{{ .Release.Namespace }}'   # workload cluster ns, on mgmt
+      prune: true
+      wait: true
+      timeout: 30m
+      postBuild:
+        substitute:
+          WC_KUBECONFIG_SECRET: '{{ .Values.cluster.name }}-kubeconfig'

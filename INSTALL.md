@@ -40,26 +40,12 @@ Check what the host can spare:
 free -g; nproc
 ```
 
-If you have room, raise it in `environment-values/my-rke2-capm3-virt/values.yaml` (the
-**management** values — `libvirt_metal` creates the VM from there):
+If you have room, resize it — **see [Appendix A](#appendix-a--resizing-workload-cp-0)**, because
+this setting does *not* live in the workload cluster values and is not applied by any of the three
+`*.sh` scripts. The VM is created by the `libvirt-metal` release on the **kind bootstrap cluster**.
 
-```yaml
-libvirt_metal:
-  nodes:
-    management-cp-0:
-      memGB: 48
-    workload-cp-0:      # add this block
-      memGB: 32
-      numCPUs: 8
-```
-
-then push the change to the management cluster:
-
-```bash
-./apply.sh environment-values/my-rke2-capm3-virt
-```
-
-Resizing later means destroying and re-provisioning the node, so decide now.
+Do it now: once the workload cluster is running on that node, resizing means destroying and
+re-provisioning it.
 
 If the host is too small, skip the resize and instead disable monitoring on the workload
 cluster in step 4's file:
@@ -242,8 +228,14 @@ kubectl get secret ${WC}-kubeconfig -n $WC -o jsonpath='{.data.value}' | base64 
 export WCK=~/sylva-core/wc-local
 ```
 
-On this single-node server the API endpoint should be directly reachable — no SSH tunnel needed.
-If it is not, the tunnel recipe is in `flux-demo-open5gs.md`, Appendix A.
+**You will need the socat tunnel for this.** The CAPI kubeconfig points at
+`https://192.168.100.3:6443`, a libvirt network that exists only inside the `libvirt-metal` pods'
+network namespace — it has no route on the host. Sylva rewrites the endpoint for the *management*
+cluster only; there is no equivalent for workload clusters. Recipe: `flux-demo-open5gs.md`,
+"The tunnel — reaching the workload cluster".
+
+This affects inspection only. Flux never needs it: its controllers run on the management node at
+`192.168.100.20`, already on that network.
 
 ```bash
 kubectl --kubeconfig=$WCK get pods -n sandbox
@@ -307,3 +299,77 @@ Full state dump for anything else:
 ```bash
 cd ~/sylva-core && ./sylva-dump.sh
 ```
+
+---
+
+## Appendix A — resizing `workload-cp-0`
+
+`libvirt_metal.nodes.workload-cp-0` is **not** a workload-cluster value, and none of `bootstrap.sh`
+/ `apply.sh` / `apply-workload-cluster.sh` will apply a change to it:
+
+- the `libvirt-metal` unit is defined only in `charts/sylva-units/bootstrap.values.yaml:487`, so it
+  exists in the **bootstrap** context — the VMs live in pods on the kind cluster
+  (`libvirt-metal-workload-cp-0-0`), not on the management cluster
+- `apply.sh` acts on the management cluster, which has no such unit
+- `bootstrap.sh` refuses to run once pivot has completed (`tools/shell-lib/common.sh:184`)
+- the pivot job suspended the `sylva-units` HelmRelease on the kind cluster
+  (`charts/sylva-units/scripts/pivot.sh:31-32`), so nothing re-renders it there
+
+So: edit the values file to keep it the source of truth, then patch the live HelmRelease on kind.
+
+**A.1 — record the intent** in `environment-values/my-rke2-capm3-virt/values.yaml`:
+
+```yaml
+libvirt_metal:
+  nodes:
+    management-cp-0:
+      memGB: 48
+    workload-cp-0:      # add this block
+      memGB: 32
+      numCPUs: 8
+```
+
+This does not apply anything by itself. It matters so a future rebuild from scratch reproduces the
+same sizing.
+
+**A.2 — check the host can take it.** `management-cp-0` already holds 48 GB:
+
+```bash
+free -g; nproc
+```
+
+**A.3 — patch the kind cluster.** `KUBECONFIG` must be **unset** — the kind cluster is the default
+context:
+
+```bash
+unset KUBECONFIG
+kubectl config current-context                     # a kind-* context
+kubectl -n sylva-system get hr libvirt-metal
+kubectl -n sylva-system get hr libvirt-metal -o jsonpath='{.spec.values.nodes}' | yq -P
+
+kubectl -n sylva-system patch helmrelease libvirt-metal --type=merge \
+  -p '{"spec":{"values":{"nodes":{"workload-cp-0":{"memGB":32,"numCPUs":8}}}}}'
+
+flux -n sylva-system reconcile helmrelease libvirt-metal
+```
+
+A JSON merge patch merges nested maps, so `management-cp-0` is left untouched — confirm with the
+`jsonpath` command above before and after.
+
+**A.4 — the pod restarts and redefines the VM:**
+
+```bash
+kubectl -n sylva-system get pod libvirt-metal-workload-cp-0-0 -w
+kubectl -n sylva-system exec libvirt-metal-workload-cp-0-0 -c vbmh -- \
+  sh -c 'virsh dominfo $(virsh list --all --name | head -1)'
+```
+
+Expect the new `Max memory` and `CPU(s)`.
+
+**Why doing this before step 6 is safe:** the BareMetalHost for `workload-cp-0` is created by the
+*workload cluster* values (`environment-values/workload-clusters/base-capm3-virt/base/capm3-virt-values.yaml:98`,
+via the `cluster-bmh` unit), so it does not exist yet. Nothing is running on the VM, and Ironic will
+inspect the resized hardware fresh when step 6 registers it.
+
+Because the patch lives only on the cluster, it is lost if the kind cluster is ever rebuilt — which
+is exactly why A.1 is not optional.

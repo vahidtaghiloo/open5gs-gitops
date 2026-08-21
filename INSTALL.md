@@ -261,7 +261,91 @@ end to end (`ping -I uesimtun0`), follow Appendix A of `flux-demo-open5gs.md`.
 
 ---
 
-## Step 9 — day 2: this is the part that is GitOps
+## Step 9 — confirm Flux is really watching the repo
+
+Four checks, cheapest first. All from the management cluster.
+
+**9.1 — the source object exists and fetched something**
+
+```bash
+flux get sources git -n $WC
+```
+
+Ready `True`, with a message like `stored artifact for revision 'main@sha1:ea8b764...'`.
+If `telco-demo` is not listed at all, the unit never rendered — that is a values problem,
+not a Flux problem; go back to step 5.
+
+**9.2 — it fetched the *right* commit**
+
+Ready only means it cloned *something*. This is the check that matters:
+
+```bash
+kubectl get gitrepository telco-demo -n $WC -o jsonpath='{.status.artifact.revision}{"\n"}'
+git ls-remote https://github.com/vahidtaghiloo/open5gs-gitops main
+```
+
+The two SHAs must match. Also confirm the poll rate is yours, not Sylva's 168h default:
+
+```bash
+kubectl get gitrepository telco-demo -n $WC -o jsonpath='{.spec.interval}{"\n"}'   # expect 1m
+```
+
+**9.3 — the Kustomizations consumed that revision**
+
+A Ready GitRepository nobody reads is still useless:
+
+```bash
+kubectl get kustomization telco-demo telco-demo-node-prereqs -n $WC \
+  -o custom-columns=NAME:.metadata.name,READY:'.status.conditions[?(@.type=="Ready")].status',REV:.status.lastAppliedRevision
+```
+
+`lastAppliedRevision` should equal the SHA from 9.2. The same SHA in all three places means
+the chain is closed.
+
+**9.4 — actual proof: push something and watch it land**
+
+The only test that proves *watching* rather than *having watched once*. An annotation on the
+HelmRepository is a good probe: it changes a live object, but triggers no Helm upgrade and
+restarts nothing.
+
+```bash
+cd ~/thesis/open5gs-gitops
+sed -i "/^  name: gradiant$/a\\  annotations:\n    demo/touch: \"$(date +%s)\"" mgmt/helmrepository.yaml
+git commit -am "touch: prove flux is watching" && git push
+```
+
+> Do not reach for `yq` here. Two different tools share that name: mikefarah's Go `yq`
+> (what `flux-demo-open5gs.md` uses) and kislyuk's Python `yq`, a jq wrapper that needs `-y`
+> and round-trips YAML through JSON, stripping every comment in the file. `yq --version`
+> tells you which one you have. `sed` is unambiguous.
+
+Then watch, **without touching the cluster**:
+
+```bash
+watch -n5 "kubectl get gitrepository telco-demo -n $WC \
+    -o jsonpath='{.status.artifact.revision}{\"\n\"}'; \
+  kubectl get helmrepository gradiant -n $WC \
+    -o jsonpath='{.metadata.annotations.demo/touch}{\"\n\"}'"
+```
+
+Within ~60 seconds the revision flips to the new SHA and the timestamp appears. That single
+observation proves all three hops at once: source-controller polled GitHub, kustomize-controller
+rebuilt `./mgmt`, and the result reached the cluster.
+
+Undo it with `git revert HEAD && git push` — the annotation disappearing also proves pruning.
+
+`flux reconcile source git telco-demo -n $WC` forces an immediate fetch, but run the timed
+version at least once, or you have only proven that manual reconcile works.
+
+Live view while testing:
+
+```bash
+flux logs -f --namespace $WC
+```
+
+---
+
+## Step 10 — day 2: this is the part that is GitOps
 
 ```bash
 cd ~/thesis/open5gs-gitops
@@ -301,6 +385,10 @@ Re-run `apply-workload-cluster.sh` **only** for changes to `telco-demo.yaml` / `
 | AMF crashloops, `socket create(2:1:132) failed (93:Protocol not supported)` | SCTP module not loaded | check `telco-demo-node-prereqs` is Ready before `telco-demo` |
 | MongoDB `ImagePullBackOff` | Bitnami retired the tag | already pinned to `bitnamilegacy`; re-check if you bumped the chart |
 | Pods `Pending`, insufficient cpu/memory | node too small | Step 1 — resize, or disable `monitoring` |
+| `telco-demo` absent from `flux get sources git` | the unit never rendered | re-check step 5 and the `apply-workload-cluster.sh` output |
+| GitRepository Ready `False`, `dial tcp ... i/o timeout` | the management **node** cannot reach github.com — its firewall, not your laptop's; a 200 from your workstation proves nothing | check `proxies:` in the values |
+| GitRepository Ready `True` but the SHA never moves | wrong interval, or suspended | `kubectl get gitrepository telco-demo -n $WC -o jsonpath='{.spec.interval}{" "}{.spec.suspend}'` |
+| GitRepository current but Kustomization `lastAppliedRevision` stale | kustomize-controller stuck | `kubectl describe kustomization telco-demo -n $WC \| tail -30` |
 
 Full state dump for anything else:
 

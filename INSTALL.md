@@ -68,11 +68,19 @@ env_type: dev
 
 Two reasons, both load-bearing:
 
-1. **Without it the render hard-fails.** The default is `env_type: prod`
-   (`charts/sylva-units/values.yaml:12320`), which disables the `sandbox-privileged-namespace`
-   unit (`values.yaml:8957`). The telco units declare `depends_on` it, and Sylva raises
+1. **It is half of what `sandbox-privileged-namespace` needs.** That unit creates the
+   PSA-privileged `sandbox` namespace Open5GS runs in, and enabling it takes **two** things:
+   `enabled: true` (already set for you in `telco-demo.yaml`) *and* `env_type` being `dev` or
+   `ci`, which its `enabled_conditions` require (`values.yaml:8957`). The default is
+   `env_type: prod` (`values.yaml:12320`). Miss either one and the render aborts with
    `unit 'telco-demo-node-prereqs' is declared with a dependency on disabled unit
-   'sandbox-privileged-namespace'` (`templates/units.yaml:305`) rather than silently skipping.
+   'sandbox-privileged-namespace'` (`templates/units.yaml:306`).
+
+   Why `enabled: true` is needed at all: the unit definition has no `enabled` key, so it falls
+   back to `units_enabled_default` — which is `false` for workload clusters (`values.yaml:306`;
+   only `management.values.yaml:4` flips it to `true`). `enabled_conditions` are then ANDed on
+   top (`_helpers.tpl:179-202`), so on a workload cluster the unit is off no matter what
+   `env_type` says.
    No `sandbox` namespace also means nowhere for Open5GS to land.
 2. **It right-sizes the stack.** Under `dev`, Prometheus/Thanos memory requests drop from 2Gi to
    512Mi, PVCs from 20Gi to 10Gi, and Prometheus retention from 50 GB to 8 GB. On a single small

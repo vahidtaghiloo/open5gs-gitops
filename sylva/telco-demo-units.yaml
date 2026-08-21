@@ -26,6 +26,19 @@ source_templates:
 
 units:
 
+  # -- 0. the sandbox namespace ------------------------------------------------
+  # Open5GS needs a PSA-privileged namespace. Sylva ships the unit that creates it,
+  # but it is OFF on workload clusters and 'env_type: dev' alone does not turn it on:
+  #   - the unit definition (values.yaml:8947) has no 'enabled' key, so it falls back
+  #     to units_enabled_default, which is false for workload clusters
+  #     (values.yaml:306; only management.values.yaml:4 flips it to true)
+  #   - its enabled_conditions then AND on top of that (_helpers.tpl:179-202)
+  # So BOTH are required: 'enabled: true' here, and 'env_type: dev' in values.yaml
+  # to satisfy the condition. Omit either and the render aborts with
+  # "dependency on disabled unit 'sandbox-privileged-namespace'".
+  sandbox-privileged-namespace:
+    enabled: true
+
   # -- 1. node prerequisites, applied INTO the workload cluster -----------------
   # Inherits kubeConfig.secretRef from unit_kustomization_spec_default, so the
   # DaemonSet lands in the workload cluster itself.

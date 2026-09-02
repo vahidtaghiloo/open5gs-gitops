@@ -6,6 +6,8 @@ kind: HelmRepository
 metadata:
   name: gradiant
   annotations:
+    demo/touch: "1788351175"
+  annotations:
     demo/touch: "1787309195"
 spec:
   type: oci

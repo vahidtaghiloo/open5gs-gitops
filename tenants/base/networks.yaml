@@ -1,0 +1,63 @@
+---
+# Tenant A's data-plane slice.
+#
+# LAB (virtual / CAPM3-virt): plugin is "bridge". The CNI bridge plugin creates
+# br-dp on the node and enables VLAN filtering. One bridge with two VLANs is the
+# honest stand-in for one physical NIC sliced into two SR-IOV VFs.
+#
+# PRODUCTION diff (see README §7): change "type" to "sriov", drop the "bridge"
+# key, and add the k8s.v1.cni.cncf.io/resourceName annotation + pod resource
+# request. Everything else -- namespace, VLAN tag, IPAM range -- stays identical.
+#
+# Both tenants use the SAME subnet 10.10.10.0/24 with disjoint whereabouts bands.
+# That is deliberate: when A cannot reach B, no routing decision is involved --
+# the packet is dropped at layer 2 by the VLAN, which is exactly the isolation
+# property an SR-IOV VF provides in production.
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: tenant-a-dp
+  namespace: tenant-a
+spec:
+  config: '{
+    "cniVersion": "0.4.0",
+    "name": "tenant-a-dp",
+    "plugins": [
+      {
+        "type": "bridge",
+        "bridge": "br-dp",
+        "vlan": 100,
+        "ipam": {
+          "type": "whereabouts",
+          "range": "10.10.10.0/24",
+          "range_start": "10.10.10.11",
+          "range_end": "10.10.10.50"
+        }
+      }
+    ]}'
+---
+# Tenant B's data-plane slice. Same bridge, different VLAN (200).
+# A NAD is namespaced: tenant-b pods can only reference NADs in tenant-b,
+# so cross-tenant attachment is impossible even before any VLAN is involved.
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: tenant-b-dp
+  namespace: tenant-b
+spec:
+  config: '{
+    "cniVersion": "0.4.0",
+    "name": "tenant-b-dp",
+    "plugins": [
+      {
+        "type": "bridge",
+        "bridge": "br-dp",
+        "vlan": 200,
+        "ipam": {
+          "type": "whereabouts",
+          "range": "10.10.10.0/24",
+          "range_start": "10.10.10.51",
+          "range_end": "10.10.10.90"
+        }
+      }
+    ]}'

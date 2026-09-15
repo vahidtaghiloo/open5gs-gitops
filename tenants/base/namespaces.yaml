@@ -1,0 +1,30 @@
+---
+# Tenant A -- containerised CNF. 'baseline' is enough: whereabouts assigns the
+# net1 address, so the workload never needs NET_ADMIN. Running under the weaker
+# profile is itself part of the story: the modern tenant needs fewer privileges.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tenant-a
+  labels:
+    sylva.telco/tenant: cloudco
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: baseline
+    pod-security.kubernetes.io/warn: baseline
+---
+# Tenant B -- KubeVirt VM. virt-launcher requires 'privileged'; this is the same
+# label set sylva-core uses for its own kubevirt-tests namespace
+# (kustomize-units/kubevirt-test-vms/kubevirt-tests-namespace.yaml).
+# It is required because Sylva deploys RKE2 with cis_profile: cis, which turns on
+# PodSecurity admission with a restrictive cluster default.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tenant-b
+  labels:
+    sylva.telco/tenant: legacyco
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged

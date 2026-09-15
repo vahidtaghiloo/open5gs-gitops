@@ -1,0 +1,68 @@
+---
+# cnf-a1 and cnf-a2: two identical netshoot pods for Tenant A (CloudCo).
+#
+# Each gets:
+#   eth0  -- cluster CNI (Calico), management plane
+#   net1  -- Multus secondary, tenant-a-dp slice (bridge/VLAN 100 in lab,
+#             SR-IOV VF in production -- see README §7 for the exact diff)
+#
+# The k8s.v1.cni.cncf.io/networks annotation is THE line that makes a container
+# a network function rather than a web app. Multus reads it at pod startup and
+# attaches the named NAD as a second interface.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cnf-a1
+  labels: {app: cnf-a1, sylva.telco/tenant: cloudco}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: cnf-a1}
+  template:
+    metadata:
+      labels: {app: cnf-a1, sylva.telco/tenant: cloudco}
+      annotations:
+        k8s.v1.cni.cncf.io/networks: tenant-a-dp
+    spec:
+      serviceAccountName: tenant-a-operator
+      containers:
+        - name: tools
+          image: nicolaka/netshoot:v0.13
+          command: ["sleep", "infinity"]
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits:   {cpu: 200m, memory: 128Mi}
+      # Uncomment if the workload node carries a control-plane NoSchedule taint
+      # (single-node cluster where control-plane == worker):
+      # tolerations:
+      #   - key: node-role.kubernetes.io/control-plane
+      #     operator: Exists
+      #     effect: NoSchedule
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cnf-a2
+  labels: {app: cnf-a2, sylva.telco/tenant: cloudco}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: cnf-a2}
+  template:
+    metadata:
+      labels: {app: cnf-a2, sylva.telco/tenant: cloudco}
+      annotations:
+        k8s.v1.cni.cncf.io/networks: tenant-a-dp
+    spec:
+      serviceAccountName: tenant-a-operator
+      containers:
+        - name: tools
+          image: nicolaka/netshoot:v0.13
+          command: ["sleep", "infinity"]
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits:   {cpu: 200m, memory: 128Mi}
+      # tolerations:
+      #   - key: node-role.kubernetes.io/control-plane
+      #     operator: Exists
+      #     effect: NoSchedule

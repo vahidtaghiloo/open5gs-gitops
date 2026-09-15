@@ -1,0 +1,67 @@
+---
+# vnf-b1: cirros KubeVirt VM representing Tenant B's legacy VNF.
+#
+# Networking:
+#   eth0 (name: default)    -- cluster CNI via KubeVirt masquerade, management plane
+#   eth1 (name: dataplane)  -- Multus secondary tenant-b-dp, data plane
+#                              bridge binding passes the Multus interface straight
+#                              into the guest; virt-launcher serves the whereabouts
+#                              address to the VM over DHCP.
+#
+# NOTE: sylva-core's own kubevirt-test-vms unit pins VMs away from control-plane
+# nodes. This workload cluster is a single control-plane node, so that affinity is
+# deliberately NOT copied here -- it would make the VM unschedulable.
+#
+# The namespace (tenant-b) is set by the Flux Kustomization targetNamespace and by
+# tenants/tenant-b/kustomization.yaml, not repeated here.
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: vnf-b1
+  labels: {sylva.telco/tenant: legacyco}
+spec:
+  runStrategy: Always
+  template:
+    metadata:
+      labels:
+        kubevirt.io/domain: vnf-b1
+        sylva.telco/tenant: legacyco
+    spec:
+      domain:
+        cpu:
+          cores: 1
+        devices:
+          disks:
+            - name: containerdisk
+              disk: {bus: virtio}
+            - name: cloudinitdisk
+              disk: {bus: virtio}
+          interfaces:
+            - name: default
+              masquerade: {}
+            - name: dataplane
+              bridge: {}
+        resources:
+          requests:
+            memory: 256Mi
+      networks:
+        - name: default
+          pod: {}
+        - name: dataplane
+          multus:
+            networkName: tenant-b-dp
+      volumes:
+        - name: containerdisk
+          containerDisk:
+            image: quay.io/kubevirt/cirros-container-disk-demo:v1.7.0
+        - name: cloudinitdisk
+          cloudInitNoCloud:
+            # cirros only DHCPs eth0 by default; bring the data-plane interface up too.
+            userData: |
+              #!/bin/sh
+              sudo cirros-dhcpc up eth1
+      # Uncomment if the workload node carries a control-plane NoSchedule taint:
+      # tolerations:
+      #   - key: node-role.kubernetes.io/control-plane
+      #     operator: Exists
+      #     effect: NoSchedule

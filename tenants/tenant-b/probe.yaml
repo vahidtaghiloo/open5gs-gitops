@@ -1,0 +1,33 @@
+---
+# probe-b1: netshoot pod for Tenant B (LegacyCo).
+#
+# A container and a VM sharing one L2 slice -- this is the point of KubeVirt in
+# this demo. The tenant's legacy VNF (vnf-b1) and its modern sidecar tooling sit
+# on the same rented segment (bridge/VLAN 200 in lab; SR-IOV VF in production).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: probe-b1
+  labels: {app: probe-b1, sylva.telco/tenant: legacyco}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: probe-b1}
+  template:
+    metadata:
+      labels: {app: probe-b1, sylva.telco/tenant: legacyco}
+      annotations:
+        k8s.v1.cni.cncf.io/networks: tenant-b-dp
+    spec:
+      serviceAccountName: tenant-b-operator
+      containers:
+        - name: tools
+          image: nicolaka/netshoot:v0.13
+          command: ["sleep", "infinity"]
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits:   {cpu: 200m, memory: 128Mi}
+      # tolerations:
+      #   - key: node-role.kubernetes.io/control-plane
+      #     operator: Exists
+      #     effect: NoSchedule

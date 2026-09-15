@@ -1,0 +1,82 @@
+---
+# Tenant A ServiceAccount -- used by cnf-a1 and cnf-a2 pods.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tenant-a-operator
+  namespace: tenant-a
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: tenant-operator
+  namespace: tenant-a
+rules:
+  - apiGroups: [""]
+    resources: [pods, pods/log, services, configmaps, secrets, persistentvolumeclaims]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [apps]
+    resources: [deployments, statefulsets, daemonsets]
+    verbs: [get, list, watch, create, update, patch, delete]
+  # The Rancher "Cluster Member" role does NOT grant this API group, so a
+  # non-admin tenant provisioning its own secondary network hits an RBAC wall.
+  # Granting it explicitly per-tenant is the correct fix, and is itself a nice
+  # illustration of "renting" being a permissions problem as much as a wiring one.
+  - apiGroups: [k8s.cni.cncf.io]
+    resources: [network-attachment-definitions]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tenant-a-operator
+  namespace: tenant-a
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: tenant-operator
+subjects:
+  - kind: ServiceAccount
+    name: tenant-a-operator
+    namespace: tenant-a
+---
+# Tenant B ServiceAccount -- used by probe-b1 pod and vnf-b1 VM (via virt-launcher).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tenant-b-operator
+  namespace: tenant-b
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: tenant-operator
+  namespace: tenant-b
+rules:
+  - apiGroups: [""]
+    resources: [pods, pods/log, services, configmaps, secrets, persistentvolumeclaims]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [apps]
+    resources: [deployments, statefulsets, daemonsets]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [k8s.cni.cncf.io]
+    resources: [network-attachment-definitions]
+    verbs: [get, list, watch]
+  # Tenant B additionally rents the right to run VMs on the shared cluster.
+  - apiGroups: [kubevirt.io]
+    resources: [virtualmachines, virtualmachineinstances]
+    verbs: [get, list, watch, create, update, patch, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tenant-b-operator
+  namespace: tenant-b
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: tenant-operator
+subjects:
+  - kind: ServiceAccount
+    name: tenant-b-operator
+    namespace: tenant-b

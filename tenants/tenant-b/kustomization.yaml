@@ -3,4 +3,4 @@ kind: Kustomization
 namespace: tenant-b
 resources:
   - probe.yaml
-  - nested-cluster.yaml
+  - vnf-vm.yaml

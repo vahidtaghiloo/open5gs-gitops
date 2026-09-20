@@ -1,9 +1,11 @@
 ---
 # probe-b1: netshoot pod for Tenant B (LegacyCo).
 #
-# A container and a VM sharing one L2 slice -- this is the point of KubeVirt in
-# this demo. The tenant's legacy VNF (vnf-b1) and its modern sidecar tooling sit
-# on the same rented segment (bridge/VLAN 200 in lab; SR-IOV VF in production).
+# A container and a nested Kubernetes cluster sharing one L2 slice -- this is
+# the point of KubeVirt in this demo. Tenant B's own 2-node cluster
+# (tenant-b-cp, tenant-b-worker -- see nested-cluster.yaml) and this sidecar
+# tooling sit on the same rented segment (bridge/VLAN 200 in lab; SR-IOV VF in
+# production).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
